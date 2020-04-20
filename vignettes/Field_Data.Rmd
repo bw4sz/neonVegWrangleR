@@ -1,0 +1,85 @@
+---
+title: "Field_data"
+author: "Ben Weinstein"
+date: "4/20/2020"
+output: html_document
+editor_options: 
+  chunk_output_type: console
+---
+
+
+```{r}
+library(ggplot2)
+```
+
+NEON page: https://data.neonscience.org/data-products/DP1.10098.001
+
+# Download NEON data and get UTM locations
+
+```{r}
+# load NEON woody vegetation structure data product into R
+vst <- neonUtilities::loadByProduct("DP1.10098.001", check.size=F,
+                                    site="BART")
+
+# calculate UTM coordinates of vst entries based on azimuth and distance
+# measurements from plot reference points
+vst_locations <- calc_tree_geolocations(vst, dataProd = "vst_mappingandtagging")
+names(vst_locations)
+```
+
+# Clean location data to create unique ids
+
+From NEON "Duplicates in vst_mappingandtagging may exist at the individualID level if errors have been corrected after ingest of the original record" 
+
+How many duplicates do we have?
+  
+```{r}
+head(vst_locations[["vst_mappingandtagging"]])
+duplicateIDs<-vst_locations[["vst_mappingandtagging"]] %>% group_by(individualID) %>% summarize(n=n()) %>% filter(n>1)
+dim(duplicateIDs)
+```
+
+Merge strategy, use more recent. For example:
+
+```{r}
+vst_locations[["vst_mappingandtagging"]] %>% filter(individualID %in% duplicateIDs$individualID[1])
+```
+
+```{r}
+uniqueIDS<-vst_locations[["vst_mappingandtagging"]] %>% group_by(individualID) %>% arrange(desc(date)) %>% slice(1)
+dim(uniqueIDS)
+dim(vst_locations[["vst_mappingandtagging"]])
+```
+
+# Clean attribute table to get unique individuals per year
+
+```{r}
+paste("Original number of attribute records", nrow(vst_locations[["vst_apparentindividual"]]))
+
+duplicated_attributes<-vst_locations[["vst_apparentindividual"]] %>% group_by(individualID,eventID) %>% summarize(n=n()) %>% filter(n>1)
+```
+
+## Show example
+
+```{r}
+vst_locations[["vst_apparentindividual"]] %>% filter(individualID=="NEON.PLA.D01.BART.00105",eventID=="vst_BART_2018")
+
+#how different are the heights and dbh on average
+height_diff<-vst_locations[["vst_apparentindividual"]] %>% filter(individualID %in% duplicated_attributes$individualID) %>% group_by(individualID) %>% summarize(d=sum(diff(height)))
+dim(height_diff)
+ggplot(height_diff,aes(x=d)) + geom_density(fill="black") + labs(x="Difference in height among duplicated IDs for the same year (m)")
+```
+
+# Merge Unique Locations and samples
+
+From NEON:
+
+"The vst_apparentindividual table contains one record per individualID per eventID, and includes growth form, structure and status data that may be linked to vst_mappingandtagging records via individualID"
+
+```{r}
+paste("Original number of attribute records", nrow(vst_locations[["vst_apparentindividual"]]))
+
+joined_df<-uniqueIDS %>% inner_join(vst_locations[["vst_apparentindividual"]],by="individualID")
+
+paste("Joined number of attribute records", nrow(joined_df))
+```
