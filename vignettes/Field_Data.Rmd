@@ -18,8 +18,7 @@ NEON page: https://data.neonscience.org/data-products/DP1.10098.001
 
 ```{r}
 # load NEON woody vegetation structure data product into R
-vst <- neonUtilities::loadByProduct("DP1.10098.001", check.size=F,
-                                    site="BART")
+vst <- neonUtilities::loadByProduct("DP1.10098.001", check.size=F)
 
 # calculate UTM coordinates of vst entries based on azimuth and distance
 # measurements from plot reference points
@@ -67,7 +66,7 @@ vst_locations[["vst_apparentindividual"]] %>% filter(individualID=="NEON.PLA.D01
 #how different are the heights and dbh on average
 height_diff<-vst_locations[["vst_apparentindividual"]] %>% filter(individualID %in% duplicated_attributes$individualID) %>% group_by(individualID) %>% summarize(d=sum(diff(height)))
 dim(height_diff)
-ggplot(height_diff,aes(x=d)) + geom_density(fill="black") + labs(x="Difference in height among duplicated IDs for the same year (m)")
+ggplot(height_diff,aes(x=d)) + geom_density(fill="black") + labs(x="Sum difference in height among duplicated IDs for the same year (m)")
 ```
 
 # Merge Unique Locations and samples
