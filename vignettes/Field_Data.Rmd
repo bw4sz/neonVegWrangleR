@@ -7,9 +7,12 @@ editor_options:
   chunk_output_type: console
 ---
 
+The goal of this vignette is download data for individual trees in the sampling plots.
 
 ```{r}
 library(ggplot2)
+library(dplyr)
+library(neonVegWrangleR)
 ```
 
 NEON page: https://data.neonscience.org/data-products/DP1.10098.001
@@ -26,11 +29,17 @@ vst_locations <- calc_tree_geolocations(vst, dataProd = "vst_mappingandtagging")
 names(vst_locations)
 ```
 
+Only tree growth forms
+
+```{r}
+trees<-vst_locations[["vst_apparentindividual"]] %>% filter(growthForm %in% c("single bole tree","multi-bole tree","small tree","sapling"))
+```
+
 # Clean location data to create unique ids
 
 From NEON "Duplicates in vst_mappingandtagging may exist at the individualID level if errors have been corrected after ingest of the original record" 
 
-How many duplicates do we have?
+How many duplicates locations do we have?
   
 ```{r}
 head(vst_locations[["vst_mappingandtagging"]])
@@ -38,7 +47,7 @@ duplicateIDs<-vst_locations[["vst_mappingandtagging"]] %>% group_by(individualID
 dim(duplicateIDs)
 ```
 
-Merge strategy, use more recent. For example:
+NEON's recommended merge strategy is to use the more recent. For example:
 
 ```{r}
 vst_locations[["vst_mappingandtagging"]] %>% filter(individualID %in% duplicateIDs$individualID[1])
@@ -53,20 +62,33 @@ dim(vst_locations[["vst_mappingandtagging"]])
 # Clean attribute table to get unique individuals per year
 
 ```{r}
-paste("Original number of attribute records", nrow(vst_locations[["vst_apparentindividual"]]))
+paste("Original number of attribute records", nrow(trees))
 
-duplicated_attributes<-vst_locations[["vst_apparentindividual"]] %>% group_by(individualID,eventID) %>% summarize(n=n()) %>% filter(n>1)
+duplicated_attributes<-trees %>% group_by(individualID,eventID) %>% summarize(n=n()) %>% filter(n>1)
+
+duplicated_attributes %>% ungroup() %>% sample_n(size=4)
+dim(duplicated_attributes)
 ```
 
-## Show example
+### Show example
 
 ```{r}
 vst_locations[["vst_apparentindividual"]] %>% filter(individualID=="NEON.PLA.D01.BART.00105",eventID=="vst_BART_2018")
 
+vst_locations[["vst_apparentindividual"]] %>% filter(individualID=="NEON.PLA.D15.ONAQ.01775",eventID=="vst_ONAQ_2017")
+
 #how different are the heights and dbh on average
-height_diff<-vst_locations[["vst_apparentindividual"]] %>% filter(individualID %in% duplicated_attributes$individualID) %>% group_by(individualID) %>% summarize(d=sum(diff(height)))
+height_diff<-trees %>% filter(individualID %in% duplicated_attributes$individualID) %>% group_by(individualID) %>% summarize(d=sum(diff(height)))
 dim(height_diff)
 ggplot(height_diff,aes(x=d)) + geom_density(fill="black") + labs(x="Sum difference in height among duplicated IDs for the same year (m)")
+```
+
+### Merge stratey
+
+It is unknown the correct strategy here since many of these records are unsolvable. For the moment I am choosing to delete them.
+
+```{r}
+trees<-trees %>% filter(!individualID %in% duplicated_attributes$individualID)
 ```
 
 # Merge Unique Locations and samples
@@ -76,9 +98,19 @@ From NEON:
 "The vst_apparentindividual table contains one record per individualID per eventID, and includes growth form, structure and status data that may be linked to vst_mappingandtagging records via individualID"
 
 ```{r}
-paste("Original number of attribute records", nrow(vst_locations[["vst_apparentindividual"]]))
+paste("Original number of attribute records", nrow(trees))
 
-joined_df<-uniqueIDS %>% inner_join(vst_locations[["vst_apparentindividual"]],by="individualID")
+joined_df<-uniqueIDS %>% dplyr::select(c("individualID",colnames(uniqueIDS)[!colnames(uniqueIDS) %in% colnames(trees)])) %>% inner_join(trees,by="individualID")
 
 paste("Joined number of attribute records", nrow(joined_df))
+colnames(trees)[colnames(trees) %in% colnames(uniqueIDS)]
+colnames(uniqueIDS)
+head(joined_df)
 ```
+
+```{r}
+table(is.na(joined_df$height))
+ggplot(joined_df) + geom_histogram(aes(x=height))
+```
+
+
